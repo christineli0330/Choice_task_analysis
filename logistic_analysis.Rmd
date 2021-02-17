@@ -50,9 +50,19 @@ choice.ex.prob = choice.prob %>% filter(abs(right.prob-mean.p)<= 2*sd.p)
 choice = filter(choice, (ID %in% choice.ex.prob$ID))
 choice = choice %>% mutate(chosehigh.mem = case_when(choseright == 1 & delta.mem >=0 ~ 1, choseright == 0 & delta.mem <0 ~ 1, choseright == 1 & delta.mem <0 ~ 0,choseright == 0 & delta.mem >=0 ~ 0 ))
 
+```
+
+
+
+#Filtered data has 40 participants in total
+
+
+The following table shows when the trials are split into high/low delta memorability, the counts of high/low trials corresponding to each subject ID.
+
+```{r, warning = FALSE}
 #split trials into high/low delta mem based on within-subject median
 choice = choice %>% dplyr::group_by(ID) %>% dplyr::mutate(rank = order(abs.mem))
-choice = choice %>% mutate(bin.absmem = case_when(rank < 35 ~ 1, rank >= 35 ~ 2))
+choice = choice %>% mutate(bin.absmem = case_when(rank < max(rank)/2 ~ 1, rank >= max(rank)/2 ~ 2))
 table(choice$bin.absmem, choice$ID)
 choice = choice %>% mutate(bin.absmem = as.factor(bin.absmem))
 
@@ -62,9 +72,8 @@ choice.sub = choice %>% group_by(ID, bin.absmem) %>% dplyr::summarize(mem.choice
 binned.choice = choice %>% group_by(bin.mem) %>% 
   dplyr::summarise(delta = mean(delta.value), RT = mean(as.numeric(rt)), MEM = mean(as.numeric(delta.mem)), n = n(), right = sum(choseright)) %>%
   mutate(p = right/n)
-
-
 ```
+
 
 Distribution plots of delta value and delta memorability
 
@@ -78,8 +87,7 @@ choice %>% ggplot(aes(x = abs.mem, fill=..count..))+
   xlab('Delta Memorability')
   
 # plot delta value where higher mem - lower mem
-choice.memvalue =  choice %>%  mutate(value.highmem = case_when(mem_left >= mem_right ~ -delta.value,
-                                                                mem_left < mem_right ~ delta.value))
+choice.memvalue =  choice %>%  mutate(value.highmem = case_when(mem_left >= mem_right ~ -delta.value, mem_left < mem_right ~ delta.value))
 choice.memvalue =  choice.memvalue %>%  mutate(value.highmem = value.highmem/100)
 choice.memvalue %>% ggplot(aes(x = value.highmem, fill=..count..))+
   geom_histogram(binwidth = 0.02)+
