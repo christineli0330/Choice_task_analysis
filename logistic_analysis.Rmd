@@ -1,0 +1,237 @@
+---
+title: "Analysis for Choice Task"
+author: "Xinyue Li"
+date: "2/16/2021"
+output: html_document
+---
+## Analysis for Choice Task
+Setup and preprocess data
+
+```{r setup, warning = FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Christine/Desktop/python/dm/data_analysis")
+library(tidyverse)
+library(dplyr)
+library(lme4)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(sjPlot)
+library(sjmisc)
+library(Hmisc)
+#library(plyr)
+library(RColorBrewer)
+library(reshape2)
+
+dat = read.csv("food-choice-batch-2-12.csv")
+#filter out the first batch
+dat = dat %>% filter(batch_id != 2)
+#create unique id for each subject
+dat$ID = cumsum(!duplicated(dat[1:2]))
+#get code
+code = dat %>% filter(completioncode !='"')
+age = dat %>% filter(ttype =='completion')
+rating = dat %>% filter(ttype == 'rating_task')
+
+choice = dat %>% filter(ttype == 'choice_task')
+choice = choice %>% filter(rt != "null")
+choice = choice %>% mutate(delta.value = as.numeric(value_right) - as.numeric(value_left))
+choice = choice %>% mutate(delta.mem = as.numeric(mem_right) - as.numeric(mem_left))
+choice = choice %>% mutate(choseright = case_when(key_press == 75 ~ 1, key_press ==74 ~ 0))
+choice = choice %>% mutate(bin.mem=ntile(choice$delta.mem, 5))
+choice = choice %>% mutate(bin.rt=ntile(choice$rt, 5))
+choice = choice %>% mutate(abs.mem = abs(delta.mem))
+
+#filter participants who are 2 sd away from the probability of choosing right/left
+choice.prob = choice %>% group_by(ID) %>% dplyr::summarize(right.choice = sum(choseright), right.prob = right.choice/69)
+mean.p = mean(choice.prob$right.prob)
+sd.p = sd(choice.prob$right.prob)
+choice.ex.prob = choice.prob %>% filter(abs(right.prob-mean.p)<= 2*sd.p)
+choice = filter(choice, (ID %in% choice.ex.prob$ID))
+choice = choice %>% mutate(chosehigh.mem = case_when(choseright == 1 & delta.mem >=0 ~ 1, choseright == 0 & delta.mem <0 ~ 1, choseright == 1 & delta.mem <0 ~ 0,choseright == 0 & delta.mem >=0 ~ 0 ))
+
+#split trials into high/low delta mem based on within-subject median
+choice = choice %>% dplyr::group_by(ID) %>% dplyr::mutate(rank = order(abs.mem))
+choice = choice %>% mutate(bin.absmem = case_when(rank < 35 ~ 1, rank >= 35 ~ 2))
+table(choice$bin.absmem, choice$ID)
+choice = choice %>% mutate(bin.absmem = as.factor(bin.absmem))
+
+#for high/low delta mem plotting
+choice.sub = choice %>% group_by(ID, bin.absmem) %>% dplyr::summarize(mem.choice = sum(chosehigh.mem), hmem.p = mem.choice/n())
+
+binned.choice = choice %>% group_by(bin.mem) %>% 
+  dplyr::summarise(delta = mean(delta.value), RT = mean(as.numeric(rt)), MEM = mean(as.numeric(delta.mem)), n = n(), right = sum(choseright)) %>%
+  mutate(p = right/n)
+
+
+```
+
+Distribution plots of delta value and delta memorability
+
+```{r, warning = FALSE}
+#plot abs delta mem
+choice %>% ggplot(aes(x = abs.mem, fill=..count..))+
+  geom_histogram(binwidth = 0.05)+
+  theme_classic()+
+  xlim(0,1)+
+  ggtitle('Distirbution of Delta Memorbaility')+
+  xlab('Delta Memorability')
+  
+# plot delta value where higher mem - lower mem
+choice.memvalue =  choice %>%  mutate(value.highmem = case_when(mem_left >= mem_right ~ -delta.value,
+                                                                mem_left < mem_right ~ delta.value))
+choice.memvalue =  choice.memvalue %>%  mutate(value.highmem = value.highmem/100)
+choice.memvalue %>% ggplot(aes(x = value.highmem, fill=..count..))+
+  geom_histogram(binwidth = 0.02)+
+  theme_classic()+
+  ggtitle('Distirbution of Delta Value')+
+  xlim(-0.5,0.5)+
+  xlab('Delta Value')
+
+
+```
+
+Split the trials into high/low memorability based on its median within each participant
+
+```{r choice, warning = FALSE， message = FALSE}
+library(plyr)
+#plot high/low mem
+binned.high.low = choice %>% group_by(bin.absmem) %>% dplyr::summarise(count = sum(chosehigh.mem), mean.mem = mean(abs.mem), n = n(), p = count/n)
+binned.high.low = binned.high.low %>% mutate(bin.absmem = as.factor(bin.absmem))
+binned.high.image = choice %>% group_by(bin.absmem, ID) %>% dplyr::summarise(count = sum(chosehigh.mem), mean.mem = mean(abs.mem), n = n(), p = count/n)
+ 
+
+binned.high.image %>% ggplot(aes( x = bin.absmem, y = p, fill = factor(bin.absmem)))+
+  geom_bar(stat="summary", alpha = .3, show.legend = FALSE)+
+  geom_point(aes(y = p, color = bin.absmem), position = position_jitter(width = .15), size = 2, alpha = 0.8, show.legend = FALSE) +
+  labs(fill='High/Low memorability') +
+  theme_classic()+
+  ggtitle("Probability of Choosing Higher Memorable Item")+
+  geom_line(aes(group = ID),alpha = 0.3)+
+  scale_x_discrete(labels=c("1" = "Low", "2" = "High"), name = "Delta Memorability")
+
+```
+
+
+```{r , include = FALSE}
+#Create raincloud theme
+"%||%" <- function(a, b) {
+  if (!is.null(a)) a else b
+}
+
+geom_flat_violin <- function(mapping = NULL, data = NULL, stat = "ydensity",
+                             position = "dodge", trim = TRUE, scale = "area",
+                             show.legend = NA, inherit.aes = TRUE, ...) {
+  layer(
+    data = data,
+    mapping = mapping,
+    stat = stat,
+    geom = GeomFlatViolin,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      trim = trim,
+      scale = scale,
+      ...
+    )
+  )
+}
+
+#' @rdname ggplot2-ggproto
+#' @format NULL
+#' @usage NULL
+#' @export
+GeomFlatViolin <-
+  ggproto("GeomFlatViolin", Geom,
+          setup_data = function(data, params) {
+            data$width <- data$width %||%
+              params$width %||% (resolution(data$x, FALSE) * 0.9)
+            
+            # ymin, ymax, xmin, and xmax define the bounding rectangle for each group
+            data %>%
+              group_by(group) %>%
+              mutate(ymin = min(y),
+                     ymax = max(y),
+                     xmin = x,
+                     xmax = x + width / 2)
+          },
+  
+  draw_group = function(data, panel_scales, coord) {
+    # Find the points for the line to go all the way around
+    data <- transform(data, xminv = x,
+                      xmaxv = x + violinwidth * (xmax - x))
+    
+    # Make sure it's sorted properly to draw the outline
+    newdata <- rbind(plyr::arrange(transform(data, x = xminv), y),
+                     plyr::arrange(transform(data, x = xmaxv), -y))
+    
+    # Close the polygon: set first and last point the same
+    # Needed for coord_polar and such
+    newdata <- rbind(newdata, newdata[1,])
+    
+    ggplot2:::ggname("geom_flat_violin", GeomPolygon$draw_panel(newdata, panel_scales, coord))
+  },
+  
+  draw_key = draw_key_polygon,
+  
+  default_aes = aes(weight = 1, colour = "grey20", fill = "white", size = 0.5,
+                    alpha = NA, linetype = "solid"),
+  
+  required_aes = c("x", "y")
+  )
+
+raincloud_theme <- theme(
+  text = element_text(size = 10),
+  axis.title.x = element_text(size = 16),
+  axis.title.y = element_text(size = 16),
+  axis.text = element_text(size = 14),
+  axis.text.x = element_text(angle = 45, vjust = 0.5),
+  legend.title = element_text(size = 16),
+  legend.text = element_text(size = 16),
+  legend.position = "right",
+  plot.title = element_text(lineheight = .8, face = "bold", size = 16),
+  panel.border = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.grid.major = element_blank(),
+  axis.line.x = element_line(colour = "black", size = 0.5, linetype = "solid"),
+  axis.line.y = element_line(colour = "black", size = 0.5, linetype = "solid"))
+
+```
+
+
+The raincloud plot for high/low delta memorability
+
+```{r, warning = FALSE}
+g <- ggplot(data = choice.sub, aes(y = hmem.p, x = as.factor(bin.absmem), fill = as.factor(bin.absmem), group=as.factor(bin.absmem))) +
+  geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = .8, show.legend = FALSE) +
+  geom_point(aes(y = hmem.p, color = as.factor(bin.absmem)), position = position_jitter(width = .15), size = .5, alpha = 0.8, show.legend = FALSE) +
+  geom_boxplot(width = .1, outlier.shape = NA, alpha = 0.5, show.legend = FALSE) +
+  #expand_limits(x = 5.25) +
+  #guides(fill = FALSE) +
+  #guides(color = FALSE) +
+  ylab('p')+
+  xlim(-1, 2)+
+ # labs(fill='High/Low mem') +
+  theme_bw() +
+ # geom_line(aes(group = ID),alpha = 0.3)+
+  scale_x_discrete(labels=c("1" = "Low", "2" = "High"), name = "Delta Memorability")+
+  raincloud_theme
+
+g
+
+```
+
+
+
+## Model Fitting
+```{r, warning = FALSE}
+m1 = glmer(choseright~1+delta.mem+delta.value+(1+delta.mem|ID), data = choice, family = "binomial")
+summary(m1)
+
+plot_model(m1)
+plot_model(m1, type = "pred")
+
+```
+
+
