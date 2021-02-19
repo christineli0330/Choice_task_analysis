@@ -35,6 +35,7 @@ rating = dat %>% filter(ttype == 'rating_task')
 
 choice = dat %>% filter(ttype == 'choice_task')
 choice = choice %>% filter(rt != "null")
+choice = choice %>% mutate(rt = as.numeric(rt))
 choice = choice %>% mutate(delta.value = as.numeric(value_right) - as.numeric(value_left))
 choice = choice %>% mutate(delta.mem = as.numeric(mem_right) - as.numeric(mem_left))
 choice = choice %>% mutate(choseright = case_when(key_press == 75 ~ 1, key_press ==74 ~ 0))
@@ -48,6 +49,14 @@ mean.p = mean(choice.prob$right.prob)
 sd.p = sd(choice.prob$right.prob)
 choice.ex.prob = choice.prob %>% filter(abs(right.prob-mean.p)<= 2*sd.p)
 choice = filter(choice, (ID %in% choice.ex.prob$ID))
+
+#filter participants with RT <300 trials
+choice.rtfiltered = choice%>% filter(rt>=300)
+choice.rtid =  choice.rtfiltered %>%dplyr::group_by(ID) %>% dplyr::summarise(RT = mean(as.numeric(rt)), n = n())
+id.filtered = choice.rtid$ID[choice.rtid$n>34]
+choice = filter(choice.rtfiltered, (ID %in% id.filtered))
+
+
 choice = choice %>% mutate(chosehigh.mem = case_when(choseright == 1 & delta.mem >=0 ~ 1, choseright == 0 & delta.mem <0 ~ 1, choseright == 1 & delta.mem <0 ~ 0,choseright == 0 & delta.mem >=0 ~ 0 ))
 
 ```
@@ -61,9 +70,18 @@ The following table shows when the trials are split into high/low delta memorabi
 
 ```{r, warning = FALSE}
 #split trials into high/low delta mem based on within-subject median
-choice = choice %>% dplyr::group_by(ID) %>% dplyr::mutate(rank = order(abs.mem))
-choice = choice %>% mutate(bin.absmem = case_when(rank < max(rank)/2 ~ 1, rank >= max(rank)/2 ~ 2))
+choice = choice %>% 
+  arrange(ID, abs.mem) %>% 
+  group_by(ID) %>% 
+  dplyr::mutate(rank = 1:n()) %>% 
+  ungroup()
+choice.low = choice %>% dplyr::group_by(ID) %>% slice(seq(0.5 * n()))
+choice.low = choice.low %>% mutate(bin.absmem = 1)
+choice.high = choice %>% dplyr::group_by(ID) %>% slice(-seq(0.5 * n()))
+choice.high = choice.high %>% mutate(bin.absmem = 2)
+choice = rbind(choice.high, choice.low)
 table(choice$bin.absmem, choice$ID)
+
 choice = choice %>% mutate(bin.absmem = as.factor(bin.absmem))
 
 #for high/low delta mem plotting
