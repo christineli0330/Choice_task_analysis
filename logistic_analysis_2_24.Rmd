@@ -9,7 +9,7 @@ Setup and preprocess data
 
 ```{r setup, warning = FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:/Users/Christine/Desktop/python/dm/data_analysis")
+setwd("C:/Users/Christine/Desktop/python/dm/data_analysis/data/2_24/")
 library(tidyverse)
 library(dplyr)
 library(lme4)
@@ -23,11 +23,12 @@ library(Hmisc)
 library(RColorBrewer)
 library(reshape2)
 
-dat = read.csv("food-choice-batch-2-12.csv")
+dat = read.csv("C:/Users/Christine/Desktop/python/dm/data_analysis/data/2_24/food-pairs-choice-task-with-age-check-edited-20.csv")
+dat = dat %>% mutate(batch_id = 1)
 #filter out the first batch
-dat = dat %>% filter(batch_id != 2)
+#dat = dat %>% filter(batch_id != 2)
 #create unique id for each subject
-dat$ID = cumsum(!duplicated(dat[1:2]))
+dat$ID = cumsum(!duplicated(dat['run_id']))
 #get code
 code = dat %>% filter(completioncode !='"')
 age = dat %>% filter(ttype =='completion')
@@ -44,16 +45,16 @@ choice = choice %>% mutate(bin.rt=ntile(choice$rt, 5))
 choice = choice %>% mutate(abs.mem = abs(delta.mem))
 
 #filter participants who are 2 sd away from the probability of choosing right/left
-choice.prob = choice %>% group_by(ID) %>% dplyr::summarize(right.choice = sum(choseright), right.prob = right.choice/69)
-mean.p = mean(choice.prob$right.prob)
+choice.prob = choice %>% group_by(ID) %>% dplyr::summarize(right.choice = sum(choseright), right.prob = right.choice/138)
+mean.p = mean(choice$choseright)
 sd.p = sd(choice.prob$right.prob)
-choice.ex.prob = choice.prob %>% filter(abs(right.prob-mean.p)<= 2*sd.p)
+choice.ex.prob = choice.prob %>% filter(abs(right.prob-mean.p)<= 2*sd.p)####
 choice = filter(choice, (ID %in% choice.ex.prob$ID))
 
 #filter participants with RT <300 trials
 choice.rtfiltered = choice%>% filter(rt>=300)
 choice.rtid =  choice.rtfiltered %>%dplyr::group_by(ID) %>% dplyr::summarise(RT = mean(as.numeric(rt)), n = n())
-id.filtered = choice.rtid$ID[choice.rtid$n>34]
+id.filtered = choice.rtid$ID[choice.rtid$n>=69]
 choice = filter(choice.rtfiltered, (ID %in% id.filtered))
 
 
