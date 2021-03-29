@@ -1,0 +1,107 @@
+---
+title: "Followup Aalysis"
+author: "Xinyue Li"
+date: "3/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Christine/src/mem_dm/Choice_task_analysis")
+library(tidyverse)
+library(dplyr)
+library(lme4)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(sjPlot)
+library(sjmisc)
+library(Hmisc)
+#library(plyr)
+library(RColorBrewer)
+library(reshape2)
+choice = read.csv('C:/Users/Christine/Box Sync/data/mem_dm/cleaned_choice.csv')
+rating = read.csv('C:/Users/Christine/Box Sync/data/mem_dm/cleaned_rating.csv')
+mem = mem = read.csv('C:/Users/Christine/Box Sync/data/mem_dm/mem.csv')
+```
+
+## Correlations between value and memorability for each image
+
+There's no significant correlations between averaged value and memorability
+
+```{r, warning = FALSE}
+#calculate mean values for each stimuli
+values = rating %>% dplyr::group_by(image) %>% dplyr::summarise(value = mean(response))
+values = values %>% mutate(stimuli = str_replace(image, 'https://voices.uchicago.edu/bakkourlab/files/2019/04/',  ''))
+
+values_mem = merge(values, mem, by.x = 'stimuli', by.y = 'X', sort = TRUE)
+
+cor.test(x = values_mem$value, y = values_mem$Memorability)
+cor.test(x = choice$delta.value, y = choice$delta.mem)
+```
+
+## Z-scoring values and check distributions
+
+The distribution of ratings are not normal, some of them have a lot of extreme values
+Is there any way to make them more matched?
+```{r, warning = FALSE}
+## z-score memorability
+mem = mem %>% mutate(z.mem = scale(Memorability)) %>% 
+  mutate(image = paste("https://voices.uchicago.edu/bakkourlab/files/2019/04/", X, sep = ""))
+mem.merge = mem[c('z.mem', 'image')]
+
+choice.z = merge(mem.merge, choice, by.x = 'image', by.y = 'stim_left')
+choice.z = choice.z %>% rename(stim_left = image, z.mem.l = z.mem)
+choice.z = merge(mem.merge, choice.z, by.x = 'image', by.y = 'stim_right')
+choice.z = choice.z %>% rename(stim_right = image, z.mem.r = z.mem)
+#calculate z delta mem
+choice.z = choice.z %>% mutate(z.delta.mem = z.mem.r-z.mem.l)
+cor.test(x = choice.z$z.delta.value, y = choice.z$z.delta.mem, method = "pearson")
+
+rating %>% dplyr::group_by(ID) %>% ggplot(aes(x = z, group = ID)) + 
+  geom_histogram() + 
+  facet_wrap(~ID)
+
+```
+
+
+## Calculate value x memorability
+
+Surprisingly, memorability weighted value cannot predict choices
+
+```{r, warning = FALSE}
+# calculate weighted memorability by using value*mem for left and right stimuli
+choice.z = choice.z %>% mutate(weighted.value.l = as.numeric(value_left)*as.numeric(mem_left),
+                               weighted.value.r = as.numeric(value_right)*as.numeric(mem_right),
+                               )
+choice.z = choice.z %>% mutate(delta.w.v = weighted.value.r-weighted.value.l)
+
+m1 = glmer(choseright~1+delta.value+delta.w.v+(1|ID), 
+           data = choice.z, family = "binomial")
+summary(m1)
+
+```
+
+## Interaction effect of z-scored delta value and delta mem
+
+No interaction effect found
+
+```{r}
+m2 = glmer(choseright~1+z.delta.mem*z.delta.value+(1+z.delta.mem*z.delta.value|ID), 
+           data = choice.z, family = "binomial")
+summary(m2)
+plot_model(m2)
+plot_model(m2, type = "pred")
+```
+
+## Model for RT
+
+```{r}
+## model for RT
+choice.z = choice.z %>% mutate(abs.delta.v.z = abs(z.delta.value))
+m3 = glm(rt~1+z.delta.mem*abs.delta.v.z+(1+z.delta.mem*abs.delta.v.z|ID), 
+           data = choice.z)
+summary(m3)
+plot_model(m3)
+```
+

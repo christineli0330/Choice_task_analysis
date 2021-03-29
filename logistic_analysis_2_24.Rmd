@@ -9,7 +9,7 @@ Setup and preprocess data
 
 ```{r setup, warning = FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:/Users/Christine/Desktop/python/dm/data_analysis/data/2_24/")
+setwd("C:/Users/Christine/Desktop/python/dm/data_analysis/data/")
 library(tidyverse)
 library(dplyr)
 library(lme4)
@@ -23,12 +23,10 @@ library(Hmisc)
 library(RColorBrewer)
 library(reshape2)
 
-dat = read.csv("C:/Users/Christine/Desktop/python/dm/data_analysis/data/2_24/food-pairs-choice-task-with-age-check-edited-20.csv")
-dat = dat %>% mutate(batch_id = 1)
-#filter out the first batch
-#dat = dat %>% filter(batch_id != 2)
+dat = read.csv("C:/Users/Christine/Desktop/python/dm/data_analysis/data/output_data/full_data_dm_3_12.csv")
+
 #create unique id for each subject
-dat$ID = cumsum(!duplicated(dat['run_id']))
+dat$ID = cumsum(!duplicated(dat[c('run_id', 'batch_id')]))
 #get code
 code = dat %>% filter(completioncode !='"')
 age = dat %>% filter(ttype =='completion')
@@ -92,6 +90,50 @@ binned.choice = choice %>% group_by(bin.mem) %>%
   dplyr::summarise(delta = mean(delta.value), RT = mean(as.numeric(rt)), MEM = mean(as.numeric(delta.mem)), n = n(), right = sum(choseright)) %>%
   mutate(p = right/n)
 ```
+
+```{r, warning = FALSE}
+# exclude based on beta in logistical regression
+choice.beta = data.frame(ID=double(),
+                         beta=double(),
+                         p=double(),
+                         stringsAsFactors=FALSE)[1:length(id.filtered),]
+#calculate beta and p for each subject
+for (i in 1:length(id.filtered)) {
+  d =  choice %>% filter(ID == id.filtered[i], is.na(choseright)==FALSE)
+  logistic = glm(choseright ~ 1 + delta.value, data = d, family = "binomial")
+  beta = summary(logistic)[['coefficients']][2,1]
+  p = summary(logistic)[['coefficients']][2,4]
+  choice.beta$ID[i] = id.filtered[i]
+  choice.beta$beta[i] = beta
+  choice.beta$p[i] = p
+}
+
+filtered.b = choice.beta %>% filter(beta>0, p<0.05)
+
+#plot regression lines in z-scored r
+choice = choice %>% dplyr::group_by(ID) %>% dplyr::mutate(z.delta.value = scale(delta.value))
+choice %>% group_by(ID) %>% ggplot(aes(x = z.delta.value, y = choseright, group = ID)) + 
+  geom_point() + 
+  stat_smooth(method="glm", method.args=list(family="binomial"), se=FALSE)+
+  facet_wrap(~ID)
+
+#filter choice with beta >0 and p<0.05
+choice = filter(choice, (ID %in% filtered.b$ID | ID %in% c(10, 56)))
+
+#plot regression lines after filtering
+choice %>% group_by(ID) %>% ggplot(aes(x = z.delta.value, y = choseright, group = ID)) + 
+  geom_point() + 
+  stat_smooth(method="glm", method.args=list(family="binomial"), se=FALSE)+
+  facet_wrap(~ID)
+
+write.csv(choice, 'C:/Users/Christine/Box Sync/data/mem_dm/cleaned_choice.csv')
+rating = filter(rating, (ID %in% filtered.b$ID | ID %in% c(10, 56)))
+rating = rating %>% mutate(response = as.numeric(response))
+rating = rating %>% group_by(ID) %>% mutate(z = scale(response))
+write.csv(rating, 'C:/Users/Christine/Box Sync/data/mem_dm/cleaned_rating.csv')
+```
+
+
 
 
 Distribution plots of delta value and delta memorability
