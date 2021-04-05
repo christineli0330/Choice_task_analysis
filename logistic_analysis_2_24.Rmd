@@ -33,14 +33,14 @@ age = dat %>% filter(ttype =='completion')
 rating = dat %>% filter(ttype == 'rating_task')
 
 choice = dat %>% filter(ttype == 'choice_task')
-choice = choice %>% filter(rt != "null")
-choice = choice %>% mutate(rt = as.numeric(rt))
-choice = choice %>% mutate(delta.value = as.numeric(value_right) - as.numeric(value_left))
-choice = choice %>% mutate(delta.mem = as.numeric(mem_right) - as.numeric(mem_left))
-choice = choice %>% mutate(choseright = case_when(key_press == 75 ~ 1, key_press ==74 ~ 0))
-choice = choice %>% mutate(bin.mem=ntile(choice$delta.mem, 5))
-choice = choice %>% mutate(bin.rt=ntile(choice$rt, 5))
-choice = choice %>% mutate(abs.mem = abs(delta.mem))
+choice = choice %>% filter(rt != "null") %>% 
+  mutate(rt = as.numeric(rt)) %>% 
+  mutate(delta.value = as.numeric(value_right) - as.numeric(value_left)) %>% 
+  mutate(delta.mem = as.numeric(mem_right) - as.numeric(mem_left)) %>% 
+  mutate(choseright = case_when(key_press == 75 ~ 1, key_press ==74 ~ 0)) %>%
+  mutate(bin.mem=ntile(choice$delta.mem, 5)) %>% 
+  mutate(bin.rt=ntile(choice$rt, 5)) %>% 
+  mutate(abs.mem = abs(delta.mem))
 
 #filter participants who are 2 sd away from the probability of choosing right/left
 choice.prob = choice %>% group_by(ID) %>% dplyr::summarize(right.choice = sum(choseright), right.prob = right.choice/138)
@@ -74,10 +74,10 @@ choice = choice %>%
   group_by(ID) %>% 
   dplyr::mutate(rank = 1:n()) %>% 
   ungroup()
-choice.low = choice %>% dplyr::group_by(ID) %>% slice(seq(0.5 * n()))
-choice.low = choice.low %>% mutate(bin.absmem = 1)
-choice.high = choice %>% dplyr::group_by(ID) %>% slice(-seq(0.5 * n()))
-choice.high = choice.high %>% mutate(bin.absmem = 2)
+choice.low = choice %>% dplyr::group_by(ID) %>% slice(seq(0.5 * n())) %>% 
+  mutate(bin.absmem = 1)
+choice.high = choice %>% dplyr::group_by(ID) %>% slice(-seq(0.5 * n())) %>% 
+  mutate(bin.absmem = 2)
 choice = rbind(choice.high, choice.low)
 table(choice$bin.absmem, choice$ID)
 
