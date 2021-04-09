@@ -117,7 +117,8 @@ m2 = glmer(choseright~1+z.delta.mem*z.delta.value+(1+z.delta.mem*z.delta.value|I
            data = choice.z, family = "binomial")
 summary(m2)
 plot_model(m2)
-plot_model(m2, type = "pred")
+plt.value = plot_model(m2, type = "pred", terms="z.delta.value [all]")
+plt.mem = plot_model(m2, type = "pred", terms="z.delta.mem [all]")
 ```
 
 ## Model for RT
@@ -140,9 +141,15 @@ plot_model(m3)
 Cannot predict results
 
 ```{r}
+#
 
-m4 = glm(rt~1+abs.mem, data = choice.z)
+m4 = lmer(log(rt)~1+abs.mem + (1+abs.mem|ID), data = choice.z)
+
 summary(m4)
+
+m4.v = lmer(log(rt)~1+abs.delta.v.z + (1+abs.delta.v.z|ID), data = choice.z)
+
+summary(m4.v)
 
 ```
 

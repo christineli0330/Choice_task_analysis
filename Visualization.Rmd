@@ -1,0 +1,242 @@
+---
+title: "Visualization"
+author: "Xinyue Li"
+date: "4/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Christine/src/mem_dm/Choice_task_analysis")
+library(tidyverse)
+library(dplyr)
+library(lme4)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(sjPlot)
+library(sjmisc)
+library(Hmisc)
+#library(plyr)
+library(RColorBrewer)
+library(reshape2)
+library(corrplot)
+require(gridExtra)
+
+#loading data files
+choice = read.csv('C:/Users/Christine/Box Sync/data/mem_dm/cleaned_choice.csv')
+rating = read.csv('C:/Users/Christine/Box Sync/data/mem_dm/cleaned_rating.csv')
+mem = read.csv('C:/Users/Christine/Box Sync/data/mem_dm/mem.csv')
+food = read.csv("C:/Users/Christine/Box Sync/data/mem_dm/stimchar_final_touse.csv")
+food = food %>% filter(age == "18-25" | age == "26-30" | age == "31-35")
+food.mean = food %>% group_by(stimulus) %>% dplyr::summarize(tasty = mean(rating.tasty),pref = mean(choice.rating))
+mem = merge(food.mean, mem, by = 'stimulus')
+
+```
+
+## Visualization figures for MA thesis
+
+Figure 1. Histogram for distribution of memorability
+
+The vertical line represents for the median of memorability scores = 0.48
+
+```{r}
+## ggplot histogram
+ggplot(mem, aes(x=Memorability)) + 
+  geom_histogram(color="steelblue", fill="white", bins = 25) + 
+  geom_vline(xintercept = 0.48,linetype = "dashed") +
+  theme_bw()
+```
+
+
+## Correlation Matrix
+
+Figure 2. Plot for correlation matrix between 17 ratings and memorbaility
+Had a prettier version on Python
+
+```{r pressure, echo=FALSE}
+rdat = food %>% dplyr::select(stimulus, choice.rating, starts_with("rating"))
+colnames(rdat) = sub("rating[.]", "", colnames(rdat))
+colnames(rdat) = sub("[.]rating", "", colnames(rdat))
+
+#rdat$sugar = 10 - rdat$sugar
+#rdat$disgusting = 10 - rdat$disgusting
+#rdat$healthy = 10 - rdat$healthy
+#rdat$vitamins = 10 - rdat$vitamins
+
+# rename
+#cinds = sapply(c("sugar", "disgusting", "healthy", "vitamins"), function(x) which(colnames(rdat) == x))
+#colnames(rdat)[cinds] = c("low-sugar", "not-disgusting", "unhealthy", "low-vitamins")
+
+rmat = as.matrix(rdat[,-1])
+rownames(rmat) = rdat$stimulus
+rmat.nochoice = rmat[,-1]
+
+new.ord = c("tasty", "othertasty", "feel", "texture", "disgusting", "familiar", "filling", "healthy", "sweetsaltysavory", "calories", "carbohydrates", "fat", "vitamins", "gluten", "sodium", "sugar", "protein", "stimulus")
+
+
+# correlation matrix with memorability score
+ave.mat.r = rdat[,new.ord] %>% 
+  group_by(stimulus) %>% 
+  summarise_all(mean) 
+# matching memorability stimulus name to food data stimulus name
+ave.mat.r = data.frame(Memorability = mem$Memorability, mem.stimulus = mem$X, ave.mat.r)
+
+M.mem = ave.mat.r %>% dplyr::select(-mem.stimulus, -stimulus) %>% cor()
+diag(M.mem) = 0
+corrplot(M.mem, method="circle", diag = F, #order="hclust", 
+         #is.corr=F, cl.lim=c(-0.85,0.85), 
+         col=rev(colorRampPalette(brewer.pal(n=11, name="RdBu"))(256)))
+```
+
+
+## Scatter plot
+
+Figure 3. Scatter plot for memorability scores and averaged tastiness score for the factor analysis on each food item. 
+
+```{r sactter, warning=FALSE}
+# factor analysis
+nFactors::nCng(as.data.frame(rmat.nochoice), model="factors") 
+fit <- factanal(rmat.nochoice, 3, scores="regression")
+
+scores3 <- fit$scores
+ind1 <- which.max(fit$loadings[rownames(fit$loadings) == "unhealthy",])
+ind2 <- which.max(fit$loadings[rownames(fit$loadings) == "tasty",])
+ind3 <- which.max(fit$loadings[rownames(fit$loadings) == "sweetsaltysavory",])
+colnames(scores3) <- c("Food.UnHealth", "Food.Taste", "Food.SweetProtein")
+outdf <- data.frame(subjectId=food$subjectId, stimulus=food$stimulus, scores3)
+
+# score of factor for each food item
+ave.factor = outdf %>% group_by(stimulus) %>% 
+  summarise_all(mean) 
+
+# add mem score to the factor data frame
+labels = sapply(mem$stimulus, function(x) which(ave.factor$stimulus == x))
+ave.factor.mem = data.frame(Memorability = mem$Memorability, mem.stimulus = mem$X, ave.factor)
+
+# perform linear regression
+fit1 = lm(Memorability ~ Food.Taste + Food.UnHealth + Food.SweetProtein, data = ave.factor.mem)
+#summary(fit1)
+
+# plot mem~food.taste
+ave.factor.mem %>% ggplot(aes(x = Food.Taste, y = Memorability))+
+  geom_point(size = 3, alpha = 0.5, color = "steelblue3", fill = "steelblue")+
+  geom_smooth(method='lm')+
+  xlab('Tastiness')+
+  theme_bw()
+
+```
+
+# Experiment 2 Figures
+
+## choseright ~ delta mem / delta value
+
+Trying to implement binned raw data into it
+
+```{r z_score, include=FALSE}
+
+values = rating %>% dplyr::group_by(image) %>% dplyr::summarise(value = mean(response))
+values = values %>% mutate(stimuli = str_replace(image, 'https://voices.uchicago.edu/bakkourlab/files/2019/04/',  ''))
+values_mem = merge(values, mem, by.x = 'stimuli', by.y = 'X', sort = TRUE)
+
+## z-score memorability
+mem = mem %>% mutate(z.mem = scale(Memorability)) %>% 
+  mutate(image = paste("https://voices.uchicago.edu/bakkourlab/files/2019/04/", X, sep = ""))
+mem.merge = mem[c('z.mem', 'image', 'tasty', 'pref')]
+
+choice.z = merge(mem.merge, choice, by.x = 'image', by.y = 'stim_left') %>% 
+  rename(stim_left = image, z.mem.l = z.mem, tasty.l = tasty, pref.l = pref)
+choice.z = merge(mem.merge, choice.z, by.x = 'image', by.y = 'stim_right') %>% 
+  rename(stim_right = image, z.mem.r = z.mem, tasty.r = tasty, pref.r = pref)
+#calculate z delta mem
+choice.z = choice.z %>% mutate(z.delta.mem = z.mem.r-z.mem.l,
+                               delta.tasty = tasty.r - tasty.l,
+                               delta.pref = pref.r - pref.l)
+
+## z-score values for each subject
+#calculate z scores within each ID
+rating.merge = rating[c('ID', 'z', 'image')]
+rating.merge.l = rating.merge %>% rename(stim_left = image)
+rating.merge.r = rating.merge %>% rename(stim_right = image)
+
+#merge columns based on ID and stimuli names
+choice.z = merge(rating.merge.l, choice.z, by = c('ID', 'stim_left')) %>%
+  rename(z.value.l = z)
+choice.z = merge(rating.merge.r, choice.z, by = c('ID', 'stim_right')) %>% 
+  rename(z.value.r = z)
+choice.z = choice.z %>% mutate(z.delta.value = z.value.r - z.value.l)
+
+```
+Generate the interaction model
+
+```{r choise_plot}
+#generate the model
+m2 = glmer(choseright~1+z.delta.mem*z.delta.value+(1+z.delta.mem*z.delta.value|ID), 
+           data = choice.z, family = "binomial")
+#summary(m2)
+#plt.value = plot_model(m2, type = "pred", terms="z.delta.value [all]")
+#plt.mem = plot_model(m2, type = "pred", terms="z.delta.mem [all]")
+
+```
+
+Plot the single effect model for delta mem
+
+```{r}
+#single model for delta mem
+m2.mem = glmer(choseright~1+z.delta.mem+(1+z.delta.mem|ID), 
+           data = choice.z, family = "binomial")
+#summary(m2.mem)
+plt.mem.c = plot_model(m2.mem, type = "pred", terms="z.delta.mem [all]")
+plt.mem.c
+```
+
+Plot the single effect model for delta value
+
+```{r}
+#single model for delta value
+m2.value = glmer(choseright~1+z.delta.value+(1+z.delta.value|ID), 
+           data = choice.z, family = "binomial")
+#summary(m2.value)
+plt.value.c = plot_model(m2.value, type = "pred", terms="z.delta.value [all]")
+plt.value.c
+
+#anova(m2.value, m2)
+```
+
+### Organize the figures together and add actual data points on them
+
+```{r}
+
+plt.mem.c = plt.mem.c + scale_y_continuous(labels = scales::percent, limits = c(0,1)) +
+  xlab("Delta Memorability")
+
+plt.value.c = plt.value.c + xlab("Delta Value")
+
+grid.arrange(plt.mem.c, plt.value.c, ncol=2)
+
+
+```
+
+
+```{r}
+## test for creating actual data figure
+
+choice.z = choice.z %>% mutate(bin.v=ntile(choice.z$z.delta.value, 5)) %>%
+  mutate(bin.m=ntile(choice.z$z.delta.mem, 5))
+
+binned.choice = choice.z %>% group_by(bin.m) %>% 
+  dplyr::summarise(delta = mean(z.delta.value), RT = mean(as.numeric(rt)), n = n(), right = sum(choseright), MEM = mean(z.delta.mem)) %>%
+  mutate(p = right/n)
+
+dat.p.m = binned.choice %>% ggplot(aes(x = MEM, y = p))+
+  geom_point()+
+  scale_y_continuous(labels = scales::percent, limits = c(0,1))+
+  scale_x_continuous(limits = c(-6,6))+
+  theme_classic()
+
+dat.p.m
+
+
+
+```
+
