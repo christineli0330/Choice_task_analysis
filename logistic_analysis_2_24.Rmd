@@ -4,12 +4,12 @@ author: "Xinyue Li"
 date: "2/16/2021"
 output: html_document
 ---
-## Analysis for Choice Task
+# Analysis for Choice Task
 Setup and preprocess data
 
 ```{r setup, warning = FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:/Users/Christine/Desktop/python/dm/data_analysis/data/")
+
 library(tidyverse)
 library(dplyr)
 library(lme4)
@@ -23,73 +23,48 @@ library(Hmisc)
 library(RColorBrewer)
 library(reshape2)
 
-dat = read.csv("C:/Users/Christine/Desktop/python/dm/data_analysis/data/output_data/full_data_dm_3_12.csv")
+#load raw dataset
+dat = read.csv("C:/Users/Christine/Box Sync/data/mem_dm/full_data_dm_3_12.csv")
 
 #create unique id for each subject
 dat$ID = cumsum(!duplicated(dat[c('run_id', 'batch_id')]))
-#get code
+
 code = dat %>% filter(completioncode !='"')
 age = dat %>% filter(ttype =='completion')
 rating = dat %>% filter(ttype == 'rating_task')
 
+#select and clean choice trials
 choice = dat %>% filter(ttype == 'choice_task')
 choice = choice %>% filter(rt != "null") %>% 
   mutate(rt = as.numeric(rt)) %>% 
   mutate(delta.value = as.numeric(value_right) - as.numeric(value_left)) %>% 
   mutate(delta.mem = as.numeric(mem_right) - as.numeric(mem_left)) %>% 
   mutate(choseright = case_when(key_press == 75 ~ 1, key_press ==74 ~ 0)) %>%
-  mutate(bin.mem=ntile(choice$delta.mem, 5)) %>% 
-  mutate(bin.rt=ntile(choice$rt, 5)) %>% 
   mutate(abs.mem = abs(delta.mem))
 
-#filter participants who are 2 sd away from the probability of choosing right/left
+#filter out participants who are 2 sd away from the probability of choosing right/left
 choice.prob = choice %>% group_by(ID) %>% dplyr::summarize(right.choice = sum(choseright), right.prob = right.choice/138)
 mean.p = mean(choice$choseright)
 sd.p = sd(choice.prob$right.prob)
 choice.ex.prob = choice.prob %>% filter(abs(right.prob-mean.p)<= 2*sd.p)####
 choice = filter(choice, (ID %in% choice.ex.prob$ID))
 
-#filter participants with RT <300 trials
+#filter out participants with RT <300 trials
 choice.rtfiltered = choice%>% filter(rt>=300)
 choice.rtid =  choice.rtfiltered %>%dplyr::group_by(ID) %>% dplyr::summarise(RT = mean(as.numeric(rt)), n = n())
 id.filtered = choice.rtid$ID[choice.rtid$n>=69]
 choice = filter(choice.rtfiltered, (ID %in% id.filtered))
 
-
+#mark trials when participants choose more memorable item
 choice = choice %>% mutate(chosehigh.mem = case_when(choseright == 1 & delta.mem >=0 ~ 1, choseright == 0 & delta.mem <0 ~ 1, choseright == 1 & delta.mem <0 ~ 0,choseright == 0 & delta.mem >=0 ~ 0 ))
 
 ```
 
 
 
-#Filtered data has 40 participants in total
+## Exclusion Processes
 
-
-The following table shows when the trials are split into high/low delta memorability, the counts of high/low trials corresponding to each subject ID.
-
-```{r, warning = FALSE}
-#split trials into high/low delta mem based on within-subject median
-choice = choice %>% 
-  arrange(ID, abs.mem) %>% 
-  group_by(ID) %>% 
-  dplyr::mutate(rank = 1:n()) %>% 
-  ungroup()
-choice.low = choice %>% dplyr::group_by(ID) %>% slice(seq(0.5 * n())) %>% 
-  mutate(bin.absmem = 1)
-choice.high = choice %>% dplyr::group_by(ID) %>% slice(-seq(0.5 * n())) %>% 
-  mutate(bin.absmem = 2)
-choice = rbind(choice.high, choice.low)
-table(choice$bin.absmem, choice$ID)
-
-choice = choice %>% mutate(bin.absmem = as.factor(bin.absmem))
-
-#for high/low delta mem plotting
-choice.sub = choice %>% group_by(ID, bin.absmem) %>% dplyr::summarize(mem.choice = sum(chosehigh.mem), hmem.p = mem.choice/n())
-
-binned.choice = choice %>% group_by(bin.mem) %>% 
-  dplyr::summarise(delta = mean(delta.value), RT = mean(as.numeric(rt)), MEM = mean(as.numeric(delta.mem)), n = n(), right = sum(choseright)) %>%
-  mutate(p = right/n)
-```
+Calculated logistic regressions of `choice ~ delta value` for each participant, exclude those who had negative beta values, and those who had p values < 0.05, since they should make choices in accord with their rated subjective value if they actually paied attention to the task.
 
 ```{r, warning = FALSE}
 # exclude based on beta in logistical regression
@@ -126,17 +101,18 @@ choice %>% group_by(ID) %>% ggplot(aes(x = z.delta.value, y = choseright, group 
   stat_smooth(method="glm", method.args=list(family="binomial"), se=FALSE)+
   facet_wrap(~ID)
 
-write.csv(choice, 'C:/Users/Christine/Box Sync/data/mem_dm/cleaned_choice.csv')
-rating = filter(rating, (ID %in% filtered.b$ID | ID %in% c(10, 56)))
-rating = rating %>% mutate(response = as.numeric(response))
-rating = rating %>% group_by(ID) %>% mutate(z = scale(response))
+#write cleaned and exclued data for further use
+rating = filter(rating, (ID %in% filtered.b$ID | ID %in% c(10, 56))) %>% 
+  mutate(response = as.numeric(response)) %>%
+  group_by(ID) %>% mutate(z = scale(response))
 write.csv(rating, 'C:/Users/Christine/Box Sync/data/mem_dm/cleaned_rating.csv')
+write.csv(choice, 'C:/Users/Christine/Box Sync/data/mem_dm/cleaned_choice.csv')
 ```
 
 
+## Distribution plots of delta value and delta memorability
 
-
-Distribution plots of delta value and delta memorability
+These two plots show the distribution of delta memorability (memorability for more memorable item - less memorable item) and the distribution of delta value (value for more memorable item - value for less memorable item), for all choice pairs among participants.
 
 ```{r, warning = FALSE}
 #plot abs delta mem
@@ -147,7 +123,7 @@ choice %>% ggplot(aes(x = abs.mem, fill=..count..))+
   ggtitle('Distirbution of Delta Memorbaility')+
   xlab('Delta Memorability')
   
-# plot delta value where higher mem - lower mem
+#plot delta value where higher mem - lower mem
 choice.memvalue =  choice %>%  mutate(value.highmem = case_when(mem_left >= mem_right ~ -delta.value, mem_left < mem_right ~ delta.value))
 choice.memvalue =  choice.memvalue %>%  mutate(value.highmem = value.highmem/100)
 choice.memvalue %>% ggplot(aes(x = value.highmem, fill=..count..))+
@@ -160,10 +136,29 @@ choice.memvalue %>% ggplot(aes(x = value.highmem, fill=..count..))+
 
 ```
 
-Split the trials into high/low memorability based on its median within each participant
+## Probability of Chosing right for high/low delta memorability 
+Since we couldn't find any strong significance of delta memorability on choices, we're trying to find possible weaker effects. To achieve that we split the trials into high/low delta memorability based on its median within each participant, and compaired the p of choosing higher memorable items within each participant.
 
 ```{r choice, warning = FALSE， message = FALSE}
 library(plyr)
+#split trials into high/low delta mem based on within-subject median
+choice = choice %>% 
+  arrange(ID, abs.mem) %>% 
+  group_by(ID) %>% 
+  dplyr::mutate(rank = 1:n()) %>% 
+  ungroup()
+choice.low = choice %>% dplyr::group_by(ID) %>% slice(seq(0.5 * n())) %>% 
+  mutate(bin.absmem = 1)
+choice.high = choice %>% dplyr::group_by(ID) %>% slice(-seq(0.5 * n())) %>% 
+  mutate(bin.absmem = 2)
+choice = rbind(choice.high, choice.low)
+table(choice$bin.absmem, choice$ID)
+
+choice = choice %>% mutate(bin.absmem = as.factor(bin.absmem))
+
+#for high/low delta mem plotting
+choice.sub = choice %>% group_by(ID, bin.absmem) %>% dplyr::summarize(mem.choice = sum(chosehigh.mem), hmem.p = mem.choice/n())
+
 #plot high/low mem
 binned.high.low = choice %>% group_by(bin.absmem) %>% dplyr::summarise(count = sum(chosehigh.mem), mean.mem = mean(abs.mem), n = n(), p = count/n)
 binned.high.low = binned.high.low %>% mutate(bin.absmem = as.factor(bin.absmem))
@@ -269,10 +264,10 @@ raincloud_theme <- theme(
 ```
 
 
-The raincloud plot for high/low delta memorability
+The raincloud plot for high/low delta memorability differences
 
 ```{r, warning = FALSE}
-g <- ggplot(data = choice.sub, aes(y = hmem.p, x = as.factor(bin.absmem), fill = as.factor(bin.absmem), group=as.factor(bin.absmem))) +
+g = ggplot(data = choice.sub, aes(y = hmem.p, x = as.factor(bin.absmem), fill = as.factor(bin.absmem), group=as.factor(bin.absmem))) +
   geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = .8, show.legend = FALSE) +
   geom_point(aes(y = hmem.p, color = as.factor(bin.absmem)), position = position_jitter(width = .15), size = .5, alpha = 0.8, show.legend = FALSE) +
   geom_boxplot(width = .1, outlier.shape = NA, alpha = 0.5, show.legend = FALSE) +
@@ -294,7 +289,10 @@ g
 
 
 ## Model Fitting
+Fitted mixted effects model for delta memorability and delta value, and found no effect of delta mem, but strong effect of delta value for predicting the behavior
+
 ```{r, warning = FALSE}
+#mixted effects model for delta mem and delta value
 m1 = glmer(choseright~1+delta.mem+delta.value+(1+delta.mem+delta.value|ID), data = choice, family = "binomial")
 summary(m1)
 
@@ -303,6 +301,7 @@ plot_model(m1, type = "pred")
 
 ```
 
+Plot for random effects
 ```{r}
 library(glmmTMB)
 plot_model(m1, type = "re")

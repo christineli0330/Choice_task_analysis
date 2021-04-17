@@ -208,13 +208,18 @@ plt.value.c
 ```{r}
 
 plt.mem.c = plt.mem.c + scale_y_continuous(labels = scales::percent, limits = c(0,1)) +
-  xlab("Delta Memorability")
+  xlab("Delta Memorability") +
+  geom_step(data = binned.choice)+
+  geom_point(aes(x = MEM, y = p))+
+  scale_y_continuous(labels = scales::percent, limits = c(0,1))+
+  scale_x_continuous(limits = c(-6,6))+
+  theme_classic()
 
 plt.value.c = plt.value.c + xlab("Delta Value")
 
 grid.arrange(plt.mem.c, plt.value.c, ncol=2)
 
-
+plt.mem.c
 ```
 
 
@@ -237,6 +242,25 @@ dat.p.m = binned.choice %>% ggplot(aes(x = MEM, y = p))+
 dat.p.m
 
 
+
+```
+
+```{r}
+## Use code from help
+
+
+p1 <- ggpredict(bpaq_Physical_RR, terms = c("BPAQ_Physical", "RobberAppearance")) 
+
+# multiply values in p1 by 100 so it is in percent
+p1$predicted <- p1$predicted*100
+p1$conf.low <- p1$conf.low*100
+p1$conf.high <- p1$conf.high*100
+
+
+# create original plot with predicted probabilities
+p <- ggplot(p1, aes(x = x, y = predicted, color= group)) + geom_line(show.legend = FALSE) + 
+  geom_ribbon(aes(ymin = p1$conf.low, ymax = p1$conf.high, fill = group),alpha = 0.3, linetype =1, show.legend = FALSE) + 
+  scale_fill_manual(values = c("green","blue","red")) + ggtitle("BPAQ Physical Aggression") + theme_bw() + ylim(0,100) + xlim(1,4.5) 
 
 ```
 

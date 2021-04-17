@@ -198,3 +198,22 @@ summary(m8)
 ```
 
 
+## Sample-level proportion of an item’s choice vs. memorability
+
+```{r}
+# calculate counts of being picked first
+left = choice.z %>% filter(choseright == 0) %>% select(stim_left)
+right = choice.z %>% filter(choseright == 1) %>% select(stim_right)
+picked.total = table(left) + table(right)
+count.total = table(choice.z$stim_left) + table(choice.z$stim_right)
+p.choice = data.frame(picked.total$left, picked.total$Freq/count.total$Freq)
+
+mem = merge(p.choice, mem, by.x = 'picked.total.left', by.y = 'image') 
+mem = mem %>% rename(p.choice = picked.total.Freq.count.total.Freq)
+
+# correlation test
+cor.test(x = mem$p.choice, y = mem$Memorability)
+
+```
+
+
